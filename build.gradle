@@ -1,42 +1,74 @@
 apply plugin: 'java'
 apply plugin: 'maven'
+apply plugin: 'jdocbook'
 
+task wrapper(type: Wrapper) {
+    gradleVersion = '1.7'
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Define some project settings
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+project.buildDir = 'target'
+project.version  = '1.2.0-SNAPSHOT'
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Define repostories for the build script
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+buildscript {
+  repositories {
+      mavenCentral()
+      mavenLocal()
+      mavenRepo name: 'jboss-nexus', url: "http://repository.jboss.org/nexus/content/groups/public/"
+  }
+  dependencies {
+      classpath "org.jboss.jdocbook:gradle-jdocbook:1.2.1"
+  }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Define repositories for the artifact (metamodelgen)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 repositories {
 	mavenCentral()
 	mavenLocal()
 	mavenRepo name: 'jboss-nexus', url: 'https://repository.jboss.org/nexus/content/groups/public'
 }
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Build a map of the dependency artifacts to use. Centralized definition of the versions to use.
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ext {
-    // build a map of the dependency artifacts to use.
-    // Allows centralized definition of the version of artifacts to use.
-    // In that respect it serves a role similar to <dependencyManagement> in Maven
-    slf4jVersion = '1.5.6'
+    slf4jVersion = '1.7.5'
+    pressgangVersion = '3.0.0'
     libraries = [
         // compile time deps
-        jpa_api:         'org.hibernate.javax.persistence:hibernate-jpa-2.0-api:1.0.0.Final',
+        jpa_api:         "org.hibernate.javax.persistence:hibernate-jpa-2.0-api:1.0.0.Final",
 
         // test libraries
-        testng:          'org.testng:testng:6.1',
-        // slf4j_api:       'org.slf4j:slf4j-api:${slf4jVersion}', -- not working!
-        // slf4j_api:       'org.slf4j:slf4j-api:' + slf4jVersion, -- not working!
-	    slf4j_api:       'org.slf4j:slf4j-api:' + slf4jVersion,
-	    slf4j_log4j:     'org.slf4j:slf4j-log4j12:' + slf4jVersion,
-	    hibernate:       'org.hibernate:hibernate-core:3.6.0.Beta1',
+        testng:          "org.testng:testng:6.1",
+	    slf4j_api:       "org.slf4j:slf4j-api:${slf4jVersion}",
+	    slf4j_log4j:     "org.slf4j:slf4j-log4j12:${slf4jVersion}",
+	    hibernate:       "org.hibernate:hibernate-core:3.6.0.Beta1",
 
         // jaxb task
-        jaxb:            'com.sun.xml.bind:jaxb-xjc:2.1.6',
-        jaxb2_basics:    'org.jvnet.jaxb2_commons:jaxb2-basics:0.6.0',
-        jaxb2_ant:       'org.jvnet.jaxb2_commons:jaxb2-basics-ant:0.6.0'
+        jaxb:            "com.sun.xml.bind:jaxb-xjc:2.1.6",
+        jaxb2_basics:    "org.jvnet.jaxb2_commons:jaxb2-basics:0.6.0",
+        jaxb2_ant:       "org.jvnet.jaxb2_commons:jaxb2-basics-ant:0.6.0"
     ]
 }
 
-configurations {
-    jaxb {
-        description = 'Dependencies for running ant xjc (jaxb class generation)'
-    }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Create configuration for JAXB class generation
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+configurations.create('jaxb')
+configurations.jaxb {
+    description = 'Dependencies for running ant xjc (jaxb class generation)'
 }
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Prepare the different dependencies per configuration
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 dependencies {
 	compile     libraries.jpa_api
 	
@@ -50,19 +82,19 @@ dependencies {
     jaxb        libraries.jaxb2_ant
 }
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// The main Java build - jaxb schema class generation, compilation, test
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sourceSets.main {
-    jaxbTargetDir = file( "${buildDir}/generated-sources" ) // needs ", single quotes don't work
+    ext.jaxbTargetDir = file( "${buildDir}/generated-sources" )
     java.srcDir jaxbTargetDir
 }
 
 sourceSets.main {
-    xsdDir = file( "${rootDir}/src/main/xsd" )
+    ext.xsdDir = file( "${rootDir}/src/main/xsd" )
     resources.srcDir xsdDir
 }
 
-group    = 'org.hibernate'
-artifact = 'hibernate-jpamodelgen'
-version  = '1.2.0-SNAPSHOT'
 jar {
 	manifest {
 		attributes 'Implementation-Title'     : '${project.name}', 
@@ -75,11 +107,11 @@ jar {
 
 task jaxb {
     // output directory
-    jaxbTargetDir = file( "${buildDir}/generated-sources" )
+    ext.jaxbTargetDir = file( "${buildDir}/generated-sources" )
 
     // input schema
-    ormXsd = file( 'src/main/xsd/orm_2_0.xsd')
-    persistenceXsd = file( 'src/main/xsd/persistence_2_0.xsd')
+    ext.ormXsd = file( 'src/main/xsd/orm_2_0.xsd')
+    ext.persistenceXsd = file( 'src/main/xsd/persistence_2_0.xsd')
 
     // configure Gradle up-to-date checking
     inputs.files( [ormXsd, persistenceXsd] )
@@ -105,11 +137,55 @@ compileJava.dependsOn jaxb
 
 test {
     useTestNG()
-    //configuring a system property for tests
     systemProperty 'sourceBaseDir', 'src/test/java'
     systemProperty 'outBaseDir', "${buildDir}/classes/test"
+
+    beforeTest { descriptor ->
+       logger.lifecycle("Running " + descriptor)
+    }
 }
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Docbook
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+jdocbook {
+    useRelativeImageUris = false
+
+    format('html_single') {
+        finalName = "index.html"
+        stylesheet = "classpath:/xslt/org/hibernate/jdocbook/xslt/xhtml-single.xsl"
+    }
+
+    format('html') {
+        finalName = "index.html"
+        stylesheet = "classpath:/xslt/org/hibernate/jdocbook/xslt/xhtml.xsl"
+    }
+
+    dependencies {   
+        jdocbookXsl      "org.jboss.pressgang:pressgang-xslt-ns:${pressgangVersion}"
+        jdocbookXsl      "org.jboss.pressgang:pressgang-fonts:${pressgangVersion}"
+        jdocbookStyles   "org.hibernate:hibernate-jdocbook-style:2.0.1"
+        jdocbookStyles   "org.jboss.pressgang:pressgang-jdocbook-style:${pressgangVersion}"
+    }
+
+    manual {
+        masterSourceDocumentName = 'master.xml'
+    }
+}
+
+stageStyles_manual.doLast {
+    logger.lifecycle( "Staging images")
+    copy {
+        from project.file( 'src/main/docbook/manual/en-US/images' )
+        into project.file( "${buildDir}/docbook/stage/manual/images" )
+        include '*.png'
+        includeEmptyDirs = false
+    }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Maven POM generation
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def pomConfig =  {
         groupId 'org.hibernate'
         artifactId 'hibernate-jpamodelgen'
@@ -151,6 +227,9 @@ configure(install.repositories.mavenInstaller) {
 	pom.project pomConfig
 }
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Artifact deploy
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 uploadArchives {
     repositories.mavenDeployer {
         name = 'jbossDeployer'
@@ -174,3 +253,7 @@ artifacts {
 }
 
 uploadArchives.dependsOn sourcesJar
+
+
+
+
