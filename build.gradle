@@ -1,4 +1,5 @@
 apply plugin: 'java'
+apply plugin: 'version-injection'
 apply plugin: 'maven'
 apply plugin: 'maven-publish'
 apply plugin: 'maven-publish-auth'
@@ -26,7 +27,8 @@ buildscript {
   }
   dependencies {
       classpath 'org.hibernate.build.gradle:gradle-maven-publish-auth:2.0.1'
-      classpath "org.jboss.jdocbook:gradle-jdocbook:1.2.1"
+      classpath 'org.jboss.jdocbook:gradle-jdocbook:1.2.1'
+      classpath 'org.hibernate.build.gradle:version-injection-plugin:1.0.0'
   }
 }
 
@@ -92,6 +94,10 @@ dependencies {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // The main Java build - jaxb schema class generation, compilation, test
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+versionInjection {
+    into( 'org.hibernate.jpamodelgen.Version', 'getVersionString' )
+}
+
 sourceSets.main {
     ext.jaxbTargetDir = file( "${buildDir}/generated-sources" )
     java.srcDir jaxbTargetDir
@@ -153,6 +159,33 @@ test {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Javadocs
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+final File documentationDir = mkdir( new File( project.buildDir, 'documentation' ) );
+final File javadocDir = mkdir( new File( documentationDir, 'javadocs' ) );
+final int copyrightYear = new GregorianCalendar().get( Calendar.YEAR );
+task javadocs(type: Javadoc) {
+    source = sourceSets.main.allJava
+    destinationDir = javadocDir
+    maxMemory = '512m'
+    configure( options ) {
+        stylesheetFile = rootProject.file( 'src/main/javadoc/stylesheet.css' )
+        windowTitle = 'Hibernate JPA 2 Metamodel Generator JavaDocs'
+        docTitle = "Hibernate JPA 2 Metamodel Generator JavaDocs ($project.version)"
+        bottom = "Copyright &copy; 2001-$copyrightYear <a href=\"http://redhat.com\">Red Hat, Inc.</a>  All Rights Reserved."
+        use = true
+        links = [ 'http://download.oracle.com/javase/6/docs/api/', 'http://download.oracle.com/javaee/6/api/' ]
+    }
+
+    doLast {
+        copy {
+            from rootProject.file( 'src/main/javadoc/images' )
+            into new File( javadocDir, "/images" )
+        }
+    }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Docbook
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 jdocbook {
@@ -191,7 +224,7 @@ stageStyles_manual.doLast {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Maven POM generation
+// Maven POM generation and partefact ublishing
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 publishing {
     publications {
